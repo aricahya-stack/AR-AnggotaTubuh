@@ -1,7 +1,8 @@
 import Human, { type FaceResult } from '@vladmandic/human';
 
-export type LiveFace = { embedding: number[]; box: [number, number, number, number]; score: number; mesh: [number, number][]; features: { eye: [number, number]; nose: [number, number]; mouth: [number, number] } | null };
-export type VisionFrame = { face: LiveFace | null; count: number; width: number; height: number };
+type Point = [number, number];
+export type LiveFace = { embedding: number[]; box: [number, number, number, number]; score: number; mesh: Point[]; landmarks: Record<string, Point | undefined>; features: { eye: Point; nose: Point; mouth: Point } | null };
+export type VisionFrame = { face: LiveFace | null; body: Record<string, Point> | null; hands: Point[][]; count: number; width: number; height: number };
 
 export class FaceVision {
   private human: Human | null = null;
@@ -30,7 +31,9 @@ export class FaceVision {
           backend: 'webgl',
           modelBasePath: '/models/',
           debug: false,
-          gesture: { enabled: false }, body: { enabled: false }, hand: { enabled: false },
+          gesture: { enabled: false },
+          body: { enabled: true, maxDetected: 1, minConfidence: 0.35, skipFrames: 1, skipTime: 160 },
+          hand: { enabled: true, maxDetected: 2, minConfidence: 0.45, skipFrames: 1, skipTime: 350 },
           object: { enabled: false }, segmentation: { enabled: false },
           face: {
             enabled: true,
@@ -74,7 +77,7 @@ export class FaceVision {
     this.stream = null;
     this.video.pause();
     this.video.srcObject = null;
-    this.callbacks.onFrame({ face: null, count: 0, width: 0, height: 0 });
+    this.callbacks.onFrame({ face: null, body: null, hands: [], count: 0, width: 0, height: 0 });
   }
 
   private async openCamera(generation: number) {
@@ -105,13 +108,27 @@ export class FaceVision {
         const face = first && embedding?.length === 1024 && first.box[2] >= 80
           ? { embedding: [...embedding], box: [...first.box] as LiveFace['box'], score: first.boxScore,
               mesh: first.mesh.filter((_, index) => index % 16 === 0).map(point => [point[0], point[1]] as [number, number]),
+              landmarks: first.mesh.length > 263 ? {
+                forehead: [first.mesh[10][0], first.mesh[10][1]] as Point,
+                eyebrow: [first.mesh[70][0], first.mesh[70][1]] as Point,
+                eye: [first.mesh[33][0], first.mesh[33][1]] as Point,
+                nose: [first.mesh[1][0], first.mesh[1][1]] as Point,
+                cheek: [first.mesh[205][0], first.mesh[205][1]] as Point,
+                mouth: [first.mesh[13][0], first.mesh[13][1]] as Point,
+              } : {},
               features: first.mesh.length > 263 ? {
                 eye: [(first.mesh[33][0] + first.mesh[263][0]) / 2, (first.mesh[33][1] + first.mesh[263][1]) / 2] as [number, number],
                 nose: [first.mesh[1][0], first.mesh[1][1]] as [number, number],
                 mouth: [first.mesh[13][0], first.mesh[13][1]] as [number, number],
               } : null }
           : null;
-        this.callbacks.onFrame({ face, count: available.length, width: this.video.videoWidth, height: this.video.videoHeight });
+        const person = result.body[0];
+        const body: Record<string, Point> | null = person ? Object.fromEntries(person.keypoints
+          .filter(point => point.score >= 0.35 && Number.isFinite(point.position[0]) && Number.isFinite(point.position[1]))
+          .map(point => [point.part, [point.position[0], point.position[1]] as Point])) : null;
+        const hands = result.hand.filter(hand => hand.score >= 0.45 && hand.keypoints.length >= 21)
+          .map(hand => hand.keypoints.map(point => [point[0], point[1]] as Point));
+        this.callbacks.onFrame({ face, body, hands, count: available.length, width: this.video.videoWidth, height: this.video.videoHeight });
       } catch (cause) { this.callbacks.onError(cause instanceof Error ? cause : Error(String(cause))); this.stop(); }
       finally { this.busy = false; }
     }

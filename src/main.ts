@@ -2,6 +2,7 @@ import 'bootstrap-icons/font/bootstrap-icons.css';
 import './styles.css';
 import { supabase, request, type Person, type Event as FaceEvent, type ListResponse, type RecognizeResponse } from './database';
 import { FaceVision, type LiveFace, type VisionFrame } from './vision';
+import { WORDS, locateWord, type Word } from './vocabulary';
 
 const el = <T extends HTMLElement>(id: string): T => {
   const value = document.getElementById(id);
@@ -33,6 +34,8 @@ let busy = false;
 let startingCamera = false;
 let toastTimer = 0;
 let currentTab = 'camera';
+let selectedWord: Word = WORDS[0];
+let lastVisionFrame: VisionFrame | null = null;
 
 const vision = new FaceVision(video, {
   onFrame(result) { frameUpdate(result); },
@@ -54,10 +57,10 @@ function updateCamera(on: boolean) {
   startButton.disabled = on;
   stopButton.disabled = !on;
   switchButton.disabled = !on;
-  el('camera-status').textContent = on ? 'Mencari wajah…' : 'Kamera belum dinyalakan';
+  el('camera-status').textContent = on ? 'Mencari bagian tubuh…' : 'Kamera belum dinyalakan';
   el('camera-hint').innerHTML = on
-    ? '<i class="bi bi-info-circle"></i> Pastikan hanya satu wajah terlihat dan pencahayaan cukup.'
-    : '<i class="bi bi-info-circle"></i> Jalankan melalui HTTPS atau localhost. Wajah tidak direkam sebagai foto.';
+    ? '<i class="bi bi-info-circle"></i> Tunjukkan bagian tubuh yang dipilih dalam pencahayaan cukup.'
+    : '<i class="bi bi-info-circle"></i> Jalankan melalui HTTPS atau localhost. Video tidak disimpan.';
   video.style.transform = vision.cameraFacing === 'user' ? 'scaleX(-1)' : 'none';
   updateButtons();
 }
@@ -69,6 +72,7 @@ function updateButtons() {
 }
 
 function frameUpdate(result: VisionFrame) {
+  lastVisionFrame = result;
   latest = result.face;
   const ctx = canvas.getContext('2d');
   if (ctx) {
@@ -78,13 +82,80 @@ function frameUpdate(result: VisionFrame) {
       if (result.width && result.height) frame.style.aspectRatio = `${result.width}/${result.height}`;
     }
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (result.face) drawFace(ctx, result.face);
+    if (result.face && currentTab !== 'vocabulary') drawFace(ctx, result.face);
+    if (currentTab === 'vocabulary') drawSelectedWord(ctx, result);
   }
   if (vision.active) {
-    el('camera-status').textContent = result.count > 1 ? 'Terdeteksi lebih dari satu wajah'
+    el('camera-status').textContent = currentTab === 'vocabulary'
+      ? result.body && Object.keys(result.body).length ? 'Pose tubuh terdeteksi' : result.face ? 'Wajah terdeteksi' : 'Mencari bagian tubuh…'
+      : result.count > 1 ? 'Terdeteksi lebih dari satu wajah'
       : result.face ? 'Satu wajah siap dikenali' : result.count === 1 ? 'Wajah terlalu jauh; dekatkan kamera' : 'Mencari wajah…';
   }
+  updateWordTracking(result);
   updateButtons();
+}
+
+function updateWordTracking(result: VisionFrame) {
+  const status = el('word-tracking');
+  if (!selectedWord.source) status.textContent = 'Kata ini dipelajari melalui daftar. Titik AR tidak tersedia untuk bagian ini.';
+  else if (!vision.active) status.textContent = 'Nyalakan kamera untuk melihat penanda AR.';
+  else if (locateWord(selectedWord.id, result)) status.textContent = `Titik ${selectedWord.indonesian.toLowerCase()} terlihat dan mengikuti gerakan.`;
+  else status.textContent = selectedWord.source === 'hand'
+    ? 'Tunjukkan satu tangan terbuka ke kamera dengan cahaya cukup.'
+    : selectedWord.source === 'face' ? 'Arahkan satu wajah ke kamera dan dekati sedikit.'
+      : 'Mundurlah agar bagian tubuh ini terlihat utuh di kamera.';
+}
+
+function drawSelectedWord(ctx: CanvasRenderingContext2D, result: VisionFrame) {
+  const point = locateWord(selectedWord.id, result);
+  if (!point || !result.width || !result.height) return;
+  const px = vision.cameraFacing === 'user' ? result.width - point[0] : point[0];
+  const py = point[1];
+  if (px < 0 || px > result.width || py < 0 || py > result.height) return;
+  const size = Math.max(15, Math.min(24, result.width / 26));
+  const label = `${selectedWord.arabic} · ${selectedWord.indonesian}`;
+  ctx.font = `700 ${size}px system-ui, sans-serif`;
+  const width = Math.min(result.width - 12, ctx.measureText(label).width + 26);
+  const x = Math.max(6, Math.min(result.width - width - 6, px - width / 2));
+  const y = py > size + 55 ? py - size - 42 : py + 19;
+  ctx.strokeStyle = '#ffe6a4';ctx.fillStyle = '#15bba0';ctx.lineWidth = 2.5;
+  ctx.beginPath();ctx.arc(px, py, 11, 0, Math.PI * 2);ctx.stroke();
+  ctx.beginPath();ctx.arc(px, py, 4, 0, Math.PI * 2);ctx.fill();
+  ctx.beginPath();ctx.moveTo(px, py > size + 55 ? py - 12 : py + 12);ctx.lineTo(px, py > size + 55 ? y + size + 14 : y);ctx.stroke();
+  ctx.fillStyle = '#173951ed';ctx.beginPath();ctx.roundRect(x, y, width, size + 14, 8);ctx.fill();
+  ctx.fillStyle = '#fff';ctx.fillText(label, x + 13, y + size + 2, width - 24);
+}
+
+function renderVocabulary() {
+  const focus = el('word-focus');focus.replaceChildren();
+  const arabic = document.createElement('strong');arabic.lang = 'ar';arabic.dir = 'rtl';arabic.textContent = selectedWord.arabic;
+  const translation = document.createElement('span');translation.textContent = selectedWord.indonesian;
+  const reading = document.createElement('small');reading.textContent = `Dibaca: ${selectedWord.latin} · ${selectedWord.source ? 'Penanda AR tersedia' : 'Pelajaran tanpa penanda AR'}`;
+  focus.append(arabic,translation,reading);
+  if (selectedWord.hint) {
+    const hint = document.createElement('small');hint.textContent = selectedWord.hint;focus.append(hint);
+  }
+  const search = el<HTMLInputElement>('vocab-search').value.trim().toLocaleLowerCase('id');
+  const list = el('word-list');list.replaceChildren();
+  for (const group of ['Kepala & wajah','Tubuh & tangan','Kaki']) {
+    const matches = WORDS.filter(word => word.group === group &&
+      `${word.arabic} ${word.latin} ${word.indonesian}`.toLocaleLowerCase('id').includes(search));
+    if (!matches.length) continue;
+    const title = document.createElement('h4');title.textContent = group;list.append(title);
+    for (const word of matches) {
+      const button = document.createElement('button');button.type = 'button';button.className = 'word-item';
+      button.classList.toggle('selected', word.id === selectedWord.id);
+      button.setAttribute('aria-pressed', String(word.id === selectedWord.id));
+      const meaning = document.createElement('span');meaning.textContent = word.indonesian;
+      const glyph = document.createElement('b');glyph.lang = 'ar';glyph.dir = 'rtl';glyph.textContent = word.arabic;
+      const badge = document.createElement('small');badge.textContent = word.source ? 'AR' : 'Pelajaran';
+      button.append(meaning,glyph,badge);
+      button.addEventListener('click', () => { selectedWord = word;renderVocabulary();if (lastVisionFrame) frameUpdate(lastVisionFrame); });
+      list.append(button);
+    }
+  }
+  if (!list.childElementCount) {const empty = document.createElement('p');empty.textContent = 'Kosakata tidak ditemukan.';list.append(empty);}
+  if (lastVisionFrame) updateWordTracking(lastVisionFrame);
 }
 
 function drawFace(ctx: CanvasRenderingContext2D, face: LiveFace) {
@@ -160,13 +231,14 @@ function tab(name: string) {
     el(`panel-${button.dataset.tab}`).hidden = !selected;
   }
   if (name === 'data' && loggedIn) void loadData();
+  if (lastVisionFrame) frameUpdate(lastVisionFrame);
   updateButtons();
 }
 
 function setAuth(authorized: boolean) {
   loggedIn = authorized;
   el('header-login-label').textContent = authorized ? 'Keluar Pengajar' : 'Masuk Pengajar';
-  el('session-badge').textContent = authorized ? 'Pengajar terhubung' : 'Mode lihat kamera';
+  el('session-badge').textContent = authorized ? 'Pengajar terhubung' : 'Mode belajar bebas';
   el('session-badge').classList.toggle('logged-in', authorized);
   if (!authorized) {
     samples = [];
@@ -341,6 +413,7 @@ el<HTMLFormElement>('enroll-form').addEventListener('submit',event=>void enroll(
 nameField.addEventListener('input',updateButtons);
 consent.addEventListener('change',updateButtons);
 threshold.addEventListener('input',()=>{el('threshold-value').textContent=`${threshold.value}%`;});
+el<HTMLInputElement>('vocab-search').addEventListener('input',renderVocabulary);
 el('refresh-data').addEventListener('click',()=>void loadData());
 el('clear-history').addEventListener('click',async()=>{
   if(!confirm('Hapus seluruh riwayat pencocokan pada akun pengajar?'))return;
@@ -355,4 +428,4 @@ el('header-login').addEventListener('click',async()=>{
 el('close-dialog').addEventListener('click',()=>loginDialog.close());
 loginForm.addEventListener('submit',event=>void login(event));
 window.addEventListener('pagehide',()=>vision.stop());
-updateCamera(false);updateSamples();void initAuth();
+updateCamera(false);updateSamples();renderVocabulary();void initAuth();

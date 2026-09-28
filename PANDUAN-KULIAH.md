@@ -2,21 +2,23 @@
 
 ## Hasil belajar
 
-Mahasiswa dapat menjelaskan empat hal: (1) kamera memperoleh video, (2) model menemukan posisi wajah, (3) model membuat embedding berupa angka, (4) Supabase menyimpan dan mencari data. Setelah membuka satu URL, mahasiswa melihat label AR bergerak mengikuti wajah dan riwayat muncul di database.
+Mahasiswa dapat menjelaskan lima hal: (1) kamera memperoleh video, (2) model pose, tangan, dan wajah menandai bagian tubuh untuk kosakata Arab, (3) model wajah membuat embedding berupa angka, (4) Supabase menyimpan dan mencari data, (5) kosakata yang tidak terlacak tetap bisa dipelajari tanpa label palsu. Setelah membuka satu URL, mahasiswa dapat belajar kosakata tanpa akun dan pengajar dapat mendemonstrasikan riwayat wajah di database.
 
 ## Persiapan dosen (sebelum mahasiswa masuk)
 
-1. Pastikan tiga query SQL, Vercel, email pengajar, dan model kamera telah diuji di ponsel yang akan dipakai.
+1. Pastikan tiga query SQL, Vercel, email pengajar, dan model kamera telah diuji di ponsel yang akan dipakai. Periksa penanda untuk wajah, telapak tangan, dan lutut secara terpisah.
 2. Pilih 2–4 sukarelawan dewasa yang memahami tujuan demo dan setuju. Siapkan kondisi terang. Orang lain dapat menjadi contoh "tidak dikenal" tanpa disimpan.
 3. Gunakan **satu perangkat yang dioperasikan pengajar** untuk pendaftaran agar kunci dan akun tidak dibagikan. Siapkan layar kedua dengan Supabase Table Editor pada `face_profiles` dan `face_events`.
 4. Ingatkan kelas bahwa skor kemiripan adalah hasil model, bukan bukti identitas; wajah kembar, foto, kondisi cahaya, dan perangkat bisa memengaruhi hasil.
 
-## Pertemuan 1 — Kamera dan AR
+## Pertemuan 1 — Kamera, kosakata dan AR
 
 - Tunjukkan tombol kamera dan izin akses di browser.
-- Tampilkan bingkai serta titik wajah; minta sukarelawan menggerakkan kepala untuk melihat label ikut bergerak.
-- Jelaskan fungsi `getUserMedia`, model wajah, koordinat kotak, dan Canvas.
-- Coba kondisi tidak terdeteksi dan dua wajah untuk menunjukkan batas sistem.
+- Buka **Kosakata Tubuh**; tunjukkan kata dari tiga kelompok: kepala/wajah, tubuh/tangan, kaki.
+- Tampilkan wajah, tangan dan lutut secara bergantian. Pilih satu kata tiap kali agar label AR mudah dibaca.
+- Bandingkan penanda yang langsung dideteksi (lutut) dengan perkiraan dari titik pose (dada); bahas mengapa rambut/gigi/telapak kaki hanya berupa kosakata.
+- Jelaskan `getUserMedia`, model wajah, MoveNet, model tangan, koordinat titik, dan Canvas.
+- Coba kondisi saat bagian tubuh di luar kamera dan dua wajah untuk menunjukkan batas sistem.
 
 ## Pertemuan 2 — Pendaftaran dan database
 
@@ -34,4 +36,4 @@ Mahasiswa dapat menjelaskan empat hal: (1) kamera memperoleh video, (2) model me
 
 ## Tugas mahasiswa
 
-Modifikasi satu bagian berikut: tampilkan kosakata Arab untuk mata/hidung/mulut, jelaskan mengapa gambar wajah tidak perlu disimpan, buat visualisasi jumlah pencocokan per kelas, atau tambahkan pengujian beberapa tingkat cahaya. Penilaian menekankan pemahaman alur dan keterbatasan model, bukan memaksimalkan pengumpulan data wajah.
+Modifikasi satu bagian berikut: tambahkan kata Arab baru ke `src/vocabulary.ts`, jelaskan mengapa gigi tidak diberi marker otomatis, jelaskan mengapa gambar wajah tidak perlu disimpan, buat visualisasi jumlah pencocokan per kelas, atau uji beberapa tingkat cahaya. Penilaian menekankan pemahaman alur dan keterbatasan model, bukan memaksimalkan pengumpulan data wajah.
